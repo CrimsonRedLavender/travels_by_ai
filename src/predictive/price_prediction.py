@@ -9,6 +9,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.tree import DecisionTreeRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from sklearn.tree import plot_tree
+
+
+
+
+
+
 
 
 df = pd.read_csv('Clean_Dataset.csv', index_col=0)
@@ -59,24 +69,25 @@ plt.bar(
 plt.xticks(rotation=45)
 plt.show()'''
 
-freq = df['destination_city'].value_counts()
-df['destination_city'] = df['destination_city'].map(freq)
-freq = df['source_city'].value_counts()
-df['source_city'] = df['source_city'].map(freq)
 
 X = df.drop(columns=['price'])
 y = df['price']
 
 
+#défintion des features
 cat_features = [
-    'airline', 'source_city', 'destination_city',
-    'stops', 'class'
+    'airline',
+    'source_city',
+    'destination_city',
+    'stops',
+    'class'
 ]
-
 num_features = [
-    'duration', 'days_left'
+    'duration',
+    'days_left'
 ]
 
+#préprocessing
 preprocessor = ColumnTransformer(
     transformers=[
         ('cat', OneHotEncoder(handle_unknown='ignore'), cat_features),
@@ -85,37 +96,86 @@ preprocessor = ColumnTransformer(
 )
 
 
-model = LinearRegression()
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
+#arbre de decision
+tree_model = DecisionTreeRegressor(
+    max_depth=10,
+    min_samples_leaf=20,
+    random_state=42
+)
 
-model = RandomForestRegressor(
+#random forest
+rf_model = RandomForestRegressor(
     n_estimators=200,
     random_state=42,
     n_jobs=-1
 )
 
-pipeline = Pipeline(steps=[
-    ('preprocess', preprocessor),
-    ('model', model)
-])
-
-
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+#xgboost
+xgb_model = XGBRegressor(
+    n_estimators=300,
+    max_depth=8,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    objective='reg:squarederror',
+    random_state=42
 )
 
-pipeline.fit(X_train, y_train)
+#LightGBM
+lgbm_model = LGBMRegressor(
+    n_estimators=500,
+    learning_rate=0.05,
+    num_leaves=31,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    verbose=-1
+)
+
+#régression linéaire
+linreg_model = LinearRegression()
 
 
+pipelines = {
+    "Decision Tree": Pipeline([
+        ('preprocess', preprocessor),
+        ('model', tree_model)
+    ]),
+    "Random Forest": Pipeline([
+        ('preprocess', preprocessor),
+        ('model', rf_model)
+    ]),
+    "XGBoost": Pipeline([
+        ('preprocess', preprocessor),
+        ('model', xgb_model)
+    ]),
+    "LightGBM": Pipeline([
+        ('preprocess', preprocessor),
+        ('model', lgbm_model)
+    ]),
+    "LingearReg": Pipeline([
+        ('preprocess', preprocessor),
+        ('model', linreg_model)
+    ])
+}
+
+#entrainement et évaluation
+#erreur moyenne entre le prix réel et le prix prédit
+#coefficient de détermination
+for name, pipe in pipelines.items():
+    pipe.fit(X_train, y_train)
+    y_pred = pipe.predict(X_test)
+    print(f"\n{name}")
+    print("MAE :", mean_absolute_error(y_test, y_pred))
+    print("R²  :", r2_score(y_test, y_pred))
 
 
-y_pred = pipeline.predict(X_test)
-
-print("MAE :", mean_absolute_error(y_test, y_pred))
-print("R²  :", r2_score(y_test, y_pred))
-
-new_flight = {
+#prédiction d'un nouveau vol
+new_flight = pd.DataFrame([{
     'airline': 'SpiceJet',
     'source_city': 'Delhi',
     'destination_city': 'Mumbai',
@@ -123,7 +183,19 @@ new_flight = {
     'class': 'Economy',
     'duration': 2.17,
     'days_left': 1
-}
+}])
+pipelines["LightGBM"].predict(new_flight)
 
 
-pipeline.predict(pd.DataFrame([new_flight]))
+#visualisation de l'arbre de décision
+plt.figure(figsize=(20, 10))
+plot_tree(
+    tree_model,
+    filled=True,
+    max_depth=3,
+    fontsize=10
+)
+plt.show()
+
+xgb_model.feature_importances_
+lgbm_model.feature_importances_
